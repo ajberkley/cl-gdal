@@ -4,7 +4,7 @@
 
 ;; --------------------------------------------------------
 
-(cffi:defcfun ("OGR_L_GetName" ogr-l-get-name) :string ; const char *
+(cffi:defcfun ("OGR_L_GetName" ogr-l-get-name) :string
   "Return the layer name.
 
  This returns the same content as
@@ -510,7 +510,7 @@
 
  @return{OGRERR_NONE on success, OGRERR_FAILURE if extent not known.}"
   (hLayer ogr-layer-h)
-  (psExtent :pointer)			; OGREnvelope *
+  (psExtent (:pointer (:struct ogr-envelope)))
   (bForce :int))
 (export 'ogr-l-get-extent)
 
@@ -993,10 +993,18 @@ This function is the same as the C++ method OGRLayer::TestCapability().
  support is compiled in.
 
 The recognized list of options is :
- SKIP_FAILURES=YES/NO. Set it to YES to go on, even when a feature could not be inserted.
- PROMOTE_TO_MULTI=YES/NO. Set it to YES to convert Polygons into MultiPolygons, or LineStrings to MultiLineStrings.
- INPUT_PREFIX=string. Set a prefix for the field names that will be created from the fields of the input layer.
- METHOD_PREFIX=string. Set a prefix for the field names that will be created from the fields of the method layer.
+
+ SKIP_FAILURES=YES/NO. Set it to YES to go on, even when a feature
+   could not be inserted.
+
+ PROMOTE_TO_MULTI=YES/NO. Set it to YES to convert Polygons into
+   MultiPolygons, or LineStrings to MultiLineStrings.
+
+ INPUT_PREFIX=string. Set a prefix for the field names that will be
+   created from the fields of the input layer.
+
+ METHOD_PREFIX=string. Set a prefix for the field names that will be
+   created from the fields of the method layer.
 
  This function is the same as the C++ method OGRLayer::Intersection().
 
@@ -1213,10 +1221,18 @@ The recognized list of options is :
  support is compiled in.
 
 The recognized list of options is :
- SKIP_FAILURES=YES/NO. Set it to YES to go on, even when a feature could not be inserted.
- PROMOTE_TO_MULTI=YES/NO. Set it to YES to convert Polygons into MultiPolygons, or LineStrings to MultiLineStrings.
- INPUT_PREFIX=string. Set a prefix for the field names that will be created from the fields of the input layer.
- METHOD_PREFIX=string. Set a prefix for the field names that will be created from the fields of the method layer.
+
+ SKIP_FAILURES=YES/NO. Set it to YES to go on, even when a feature
+   could not be inserted.
+
+ PROMOTE_TO_MULTI=YES/NO. Set it to YES to convert Polygons into
+   MultiPolygons, or LineStrings to MultiLineStrings.
+
+ INPUT_PREFIX=string. Set a prefix for the field names that will be
+   created from the fields of the input layer.
+
+ METHOD_PREFIX=string. Set a prefix for the field names that will be
+   created from the fields of the method layer.
 
  This function is the same as the C++ method OGRLayer::Update().
 
@@ -1262,10 +1278,18 @@ The recognized list of options is :
  support is compiled in.
 
 The recognized list of options is :
- SKIP_FAILURES=YES/NO. Set it to YES to go on, even when a feature could not be inserted.
- PROMOTE_TO_MULTI=YES/NO. Set it to YES to convert Polygons into MultiPolygons, or LineStrings to MultiLineStrings.
- INPUT_PREFIX=string. Set a prefix for the field names that will be created from the fields of the input layer.
- METHOD_PREFIX=string. Set a prefix for the field names that will be created from the fields of the method layer.
+
+ SKIP_FAILURES=YES/NO. Set it to YES to go on, even when a feature
+   could not be inserted.
+
+ PROMOTE_TO_MULTI=YES/NO. Set it to YES to convert Polygons into
+   MultiPolygons, or LineStrings to MultiLineStrings.
+
+ INPUT_PREFIX=string. Set a prefix for the field names that will be
+   created from the fields of the input layer.
+
+ METHOD_PREFIX=string. Set a prefix for the field names that will be
+   created from the fields of the method layer.
 
  This function is the same as the C++ method OGRLayer::Clip().
 
@@ -1310,11 +1334,19 @@ The recognized list of options is :
  This method relies on GEOS support. Do not use unless the GEOS
  support is compiled in.
 
-The recognized list of options is :
- SKIP_FAILURES=YES/NO. Set it to YES to go on, even when a feature could not be inserted.
- PROMOTE_TO_MULTI=YES/NO. Set it to YES to convert Polygons into MultiPolygons, or LineStrings to MultiLineStrings.
- INPUT_PREFIX=string. Set a prefix for the field names that will be created from the fields of the input layer.
- METHOD_PREFIX=string. Set a prefix for the field names that will be created from the fields of the method layer.
+ The recognized list of options is :
+
+ SKIP_FAILURES=YES/NO. Set it to YES to go on, even when a feature
+   could not be inserted.
+
+ PROMOTE_TO_MULTI=YES/NO. Set it to YES to convert Polygons into
+   MultiPolygons, or LineStrings to MultiLineStrings.
+
+ INPUT_PREFIX=string. Set a prefix for the field names that will be
+   created from the fields of the input layer.
+
+ METHOD_PREFIX=string. Set a prefix for the field names that will be
+   created from the fields of the method layer.
 
  This function is the same as the C++ method OGRLayer::Erase().
 
@@ -1339,5 +1371,82 @@ The recognized list of options is :
   (pfnProgress :pointer)		; GDALProgressFunc
   (pProgressArg :pointer))		; void *
 (export 'ogr-l-erase)
+
+;; --------------------------------------------------------
+;; CLOS
+;; --------------------------------------------------------
+
+(defmethod get-name ((layer <layer>))
+  (ogr-l-get-name (pointer layer)))
+
+;; --------------------------------------------------------
+
+(defmethod get-type ((layer <layer>))
+  (ogr-l-get-geom-type (pointer layer)))
+
+;; --------------------------------------------------------
+
+(defgeneric get-next-feature (l)
+  (:documentation "")
+  (:method ((layer <layer>))
+    (let ((feature-h (ogr-l-get-next-feature (pointer layer))))
+      (unless (cffi:null-pointer-p feature-h)
+	(make-instance '<feature>' :pointer feature-h)))))
+(export 'get-next-feature)
+
+;; --------------------------------------------------------
+
+(defgeneric get-feature (l idx)
+  (:documentation "")
+  (:method ((layer <layer>) (idx integer))
+    (make-instance '<feature>'
+		   :pointer (ogr-l-get-feature (pointer layer)
+					       idx))))
+(export 'get-feature)
+
+;; --------------------------------------------------------
+
+(defgeneric get-feature-count (l &optional bf)
+  (:documentation "BF is for brute-force.")
+  (:method ((layer <layer>) &optional bf)
+    (let ((count (ogr-l-get-feature-count (pointer layer)
+					  (if bf 1 0))))
+      (when (>= count 0)
+	count))))
+(export 'get-feature-count)
+
+;; --------------------------------------------------------
+
+(defgeneric get-geometry-column (l)
+  (:documentation "")
+  (:method ((layer <layer>))
+    (ogr-l-get-geometry-column (pointer layer))))
+(export 'get-geometry-column)
+
+;; --------------------------------------------------------
+
+(defmethod get-spatial-ref ((l <layer>))
+  ;; return NIL if there is no spatial-ref
+  (let ((ref (ogr-l-get-spatial-ref (pointer l))))
+    (unless (cffi:null-pointer-p ref)
+      (make-instance '<spatial-ref>
+                     :pointer ref))))
+
+;; --------------------------------------------------------
+
+(defmethod get-extent ((l <layer>))
+  (cffi:with-foreign-object (envelope '(:struct ogr-envelope))
+    (let ((ret (ogr-l-get-extent (ogr:pointer l) envelope 0)))
+      ;; ogr-err checking
+      (unless (eql ret :none)
+	(error (make-condition '<ogr-error> :error-code ret))))
+    (cffi:with-foreign-slots ((minx maxx miny maxy)
+			      envelope
+			      (:struct ogr-envelope))
+      (make-instance '<envelope>
+		     :min-x minx
+		     :min-y miny
+		     :max-x maxx
+		     :max-y maxy))))
 
 ;; EOF

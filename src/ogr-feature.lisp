@@ -902,5 +902,14 @@ This function is the same as the C++ OGRFeature::SetGeomField().
 (export 'ogr-f-set-style-string-directly)
 
 ;; --------------------------------------------------------
+;; CLOS
+;; --------------------------------------------------------
+
+(defmethod get-geometry ((feature <feature>) &optional idx)
+  (declare (ignore idx))
+  ;; todo!
+  (let* ((ref (ogr-f-get-geometry-ref (pointer feature)))
+	 (geom-type (ogr-g-get-geometry-type ref)))
+    (dispatch-geometry-construction geom-type ref)))
 
 ;; EOF

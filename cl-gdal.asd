@@ -1,14 +1,6 @@
 ;;; -*- mode: lisp; -*-
-
-(in-package :cl-user)
-
-(defpackage :cl-gdal-asd
-  (:use :cl :asdf))
-
-(in-package :cl-gdal-asd)
-
 (defsystem :cl-gdal
-    :version "2013.08.25"      ; YYYY.MM.DD -- digits to suit the ASDF
+    :version "2013.8.25"      ; YYYY.MM.DD -- digits to suit the ASDF
     :licence "BSD"
     :description "CL-GDAL is a Common Lisp wrapper for the GDAL library."
     :author "Victor Anyakin <anyakinvictor@yahoo.com>"
@@ -30,10 +22,12 @@ Master: http://www.gdal.org"
     :serial t
     :components
     ((:module "src"
+	      :serial t
 	      :components ((:file "gdal-package")
 			   (:file "gdal-core")
 			   (:file "gdal-dataset")
-			   (:file "gdal-rasterband"))))
+			   (:file "gdal-rasterband")
+			   (:file "gdal-common"))))
     :depends-on (:cffi
 		 :trivial-garbage))
 
