@@ -18,11 +18,7 @@ echo "(:tree \"~/cl-gdal\")" > ~/.config/common-lisp/source-registry.conf.d/10-c
 (quicklisp:quickload :cffi)
 (quicklisp:quickload :trivial-garbage)
 
-(require 'cl-gdal)
-(require 'cl-ogr)
-(load "src/gdal-core.lisp")
-(load "src/ogr-core.lisp")
-(load "cl-gdal-local.lisp")
+(require 'cl-gdal-local)
 (use-package :cl-gdal)
 (use-package :cl-ogr)
 ```
