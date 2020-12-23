@@ -137,6 +137,18 @@
 
 ;; --------------------------------------------------------
 
+(cffi:defcfun ("GDALGetRasterYSize" gdal-get-raster-y-size) :int
+  "Fetch YSize of raster."
+  (hBand gdal-raster-band-h))
+
+;; --------------------------------------------------------
+
+(cffi:defcfun ("GDALGetRasterXSize" gdal-get-raster-x-size) :int
+  "Fetch XSize of raster."
+  (hBand gdal-raster-band-h))
+
+;; --------------------------------------------------------
+
 (cffi:defcfun ("GDALGetRasterCategoryNames" gdal-get-raster-category-names) (:pointer :string)
   "Fetch the list of category names for this raster."
   (hBand gdal-raster-band-h))
@@ -217,7 +229,7 @@
 
 ;; --------------------------------------------------------
 
-(cffi:defcfun ("GDALGetRasterStatistics" gdal-get-raster-statistics) cpl-err
+(cffi:defcfun ("GDALGetRasterStatistics" gdal-get-raster-statistics&) cpl-err
   "Fetch image statistics."
   (hBand gdal-raster-band-h)
   (bApproxOK :int)

@@ -1,55 +1,30 @@
 (in-package :cl-gdal)
-;; Local changes from ajb
+
+;; DO NOT FORGET TO CALL MAYBE-INITIALIZE-GDAL-OGR
+
+(defparameter *initialized* nil)
 
 (defmacro with-gdal-file ((filevar filename &optional (access (or :ga_readonly :ga_update))) &body body)
+  "Bind filevar to the result of gdal-open on filename.  Close on unwind / end of block."
   `(let (,filevar)
      (unwind-protect
 	  (progn
-            (sb-int:with-float-traps-masked (:invalid)
+            (sb-int:with-float-traps-masked (:invalid) ;; needed for some files!
               (setf ,filevar (gdal-open ,filename ,access)))
 	    (assert (not (cffi::null-pointer-p ,filevar)) nil "Failed to open file")
 	    ,@body)
        (when (not (cffi::null-pointer-p ,filevar)) (gdal-close ,filevar)))))
-
-(cffi:defcfun ("GDALGetRasterYSize" gdal-get-raster-y-size) :int
-  "Fetch YSize of raster."
-  (hBand gdal-raster-band-h))
-
-(cffi:defcfun ("GDALGetRasterXSize" gdal-get-raster-x-size) :int
-  "Fetch XSize of raster."
-  (hBand gdal-raster-band-h))
-
-(defparameter *initialized* nil)
-
-(defun get-geo-transform (dshandle)
-  (let ((blarg (make-array 6 :element-type 'double-float)))
-    (sb-ext::with-pinned-objects (blarg)
-      (gdalgetgeotransform dshandle (sb-kernel::vector-sap blarg)))
-    blarg))
-
-(defun make-geo-transform (hband)
-  (let ((blarg (get-geo-transform hband)))
-    (values 
-     (lambda (x-idx y-idx) ;; pixel indices, from 0
-       (let ((center-x (+ x-idx 0.5))
-	     (center-y (+ y-idx 0.5)))
-	 (list (+ (aref blarg 0) (* (aref blarg 1) center-x) (* (aref blarg 2) center-y))
-	       (+ (aref blarg 3) (* (aref blarg 4) center-x) (* (aref blarg 5) center-y)))))
-     blarg)))
 
 (defun gdal-get-raster-statistics* (raster-band &optional (b-approx-ok 0) (bforce 1))
   (cffi:with-foreign-object (pdfMin :double)
     (cffi:with-foreign-object (pdfMax :double)
       (cffi:with-foreign-object (pdfMean :double)
 	(cffi:with-foreign-object (pdfStdDev :double)
-	  (gdal-get-raster-statistics raster-band b-approx-ok bforce pdfmin pdfmax pdfmean pdfstddev)
+	  (gdal-get-raster-statistics& raster-band b-approx-ok bforce pdfmin pdfmax pdfmean pdfstddev)
 	  (list :min (cffi:mem-ref pdfMin :double)
 		:max (cffi:mem-ref pdfMax :double)
 		:mean (cffi:mem-ref pdfMean :double)
 		:stddev (cffi:mem-ref pdfStdDev :double)))))))
-
-
-
 
 (defun gdal-get-block-size* (hband)
   (cffi:with-foreign-object (x-blk-size :int)
@@ -124,6 +99,7 @@
     (setf *initialized* t)))
 
 (defun set-geo-transform (hdriver array)
+  "GDALSetGeoTransform copies the coefficients, so we need not allocate anything."
   (sb-int::with-pinned-objects (array)
     (gdalsetgeotransform hdriver (sb-int::vector-sap array))))
 
@@ -258,57 +234,3 @@ Example:
 ;; 		(ogr-f-destroy feature)
 ;; 		(ogr-ds-destroy ds)))))))))
 
-(alexandria:define-constant +google-map-wkt+
-  "GEOGCS[\"WGS 84\",
-    DATUM[\"WGS_1984\",
-        SPHEROID[\"WGS 84\",6378137,298.257223563,
-            AUTHORITY[\"EPSG\",\"7030\"]],
-        AUTHORITY[\"EPSG\",\"6326\"]],
-    PRIMEM[\"Greenwich\",0,
-        AUTHORITY[\"EPSG\",\"8901\"]],
-    UNIT[\"degree\",0.01745329251994328,
-        AUTHORITY[\"EPSG\",\"9122\"]],
-    AUTHORITY[\"EPSG\",\"4326\"]]")
-
-(defun generate-lat-lon-to-pixel-transform (handle)
-  (declare (optimize (speed 3)))
-  "Remember pixel 0 0 is the upper left of the image... so the bottom right of a 100x100 pixel image
-   is actually at pixel 100x100 (the bottom right of the last pixel at (99,99))"
-  (let* ((x-size (gdal-get-raster-band-x-size (gdal-get-raster-band handle 1)))
-	 (y-size (gdal-get-raster-band-y-size (gdal-get-raster-band handle 1)))
-	 (my-projection (osr-new-spatial-reference (gdalGetProjectionRef handle)))
-	 (google-projection (osr-new-spatial-reference +google-map-wkt+))
-	 (itransform (make-coordinate-transformation google-projection my-projection))
-	 (ftransform (make-coordinate-transformation my-projection google-projection))
-	 (source-geo-transform (get-geo-transform handle))
-	 (ulx (aref source-geo-transform 0))
-	 (lry (+ (aref source-geo-transform 3) (* x-size (aref source-geo-transform 4)) (* y-size (aref source-geo-transform 5))))
-	 (lrx (+ (aref source-geo-transform 0) (* x-size (aref source-geo-transform 1)) (* y-size (aref source-geo-transform 2))))
-	 (uly (aref source-geo-transform 3)))
-    (declare (type fixnum x-size y-size)
-	     (type double-float ulx lry lrx uly)
-	     (type (simple-array double-float (6)) source-geo-transform))
-    (labels ((from-source-pixel-to-source-geo-ref (pixelx pixely)
-	       (list (+ (aref source-geo-transform 3) (* pixelx (aref source-geo-transform 4)) (* pixely (aref source-geo-transform 5)))
-		     (+ (aref source-geo-transform 0) (* pixelx (aref source-geo-transform 1)) (* pixely (aref source-geo-transform 2)))))
-	     (from-source-geo-ref-to-source-pixel (ref)
-	       (let ((xpixel (* x-size (/ (- (the double-float (car ref)) ulx) (- lrx ulx))))
-		     (ypixel (* y-size (/ (- (the double-float (cdr ref)) uly) (- lry uly)))))
-		 (list (round xpixel) (round ypixel))))
-	     (from-source-geo-ref-to-lon-lat (georefx georefy)
-	       (transform-point* ftransform georefy georefx))
-	     (from-source-pixel-to-lon-lat (pixelx pixely)
-	       (apply #'from-source-geo-ref-to-lon-lat (from-source-pixel-to-source-geo-ref pixelx pixely)))
-	     (from-google-geo-ref-to-source-geo-ref (a b)
-	       (from-source-geo-ref-to-source-pixel
-		(transform-point-unthreadsafe itransform (coerce a 'double-float) (coerce b 'double-float)))))
-      (destructuring-bind (ullon ullat)
-	  (transform-point* ftransform ulx uly)
-	(destructuring-bind (lrlon lrlat)
-	    (transform-point* ftransform lrx lry)
-	  (format t "Corner Coordinates of source file:~%")
-	  (format t "Upper Left (~,4f, ~,4f) (LON ~,6f, LAT ~,6f) ~%" ulx uly ullon ullat)
-	  (format t "Lower Right (~,4f, ~,4f) (LON ~,6f, LAT ~,6f)~%" lrx lry lrlon lrlat)
-	  (format t "Upper Left is ~A~%" (from-source-geo-ref-to-source-pixel (cons ulx uly)))
-	  (format t "Lower Right is ~A~%" (from-source-geo-ref-to-source-pixel (cons lrx lry)))
-      (values #'from-google-geo-ref-to-source-geo-ref #'from-source-pixel-to-lon-lat))))))

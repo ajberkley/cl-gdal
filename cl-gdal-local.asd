@@ -8,7 +8,8 @@
     "Some additions on top of cl-gdal"
     :serial t
     :components
-    ((:file "cl-gdal-local"))
+  ((:file "src/geo-transform")
+   (:file "cl-gdal-local"))
     :depends-on (:cl-gdal
                  :cl-ogr
                  :alexandria
