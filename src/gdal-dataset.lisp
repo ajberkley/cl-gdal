@@ -264,13 +264,6 @@ GDALOpen()
 
 ;; --------------------------------------------------------
 
-(cffi:defcfun ("GDALSetGeoTransform" GDALSetGeoTransform) cpl-err
-  "Set the affine transformation coefficients."
-  (hDS gdal-dataset-h)
-  (padfTransform (:pointer :double)))
-
-;; --------------------------------------------------------
-
 (cffi:defcfun ("GDALDereferenceDataset" GDALDereferenceDataset) :int
   "Subtract one from dataset reference count."
   (hDataset gdal-dataset-h))

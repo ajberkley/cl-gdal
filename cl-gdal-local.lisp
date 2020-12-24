@@ -98,10 +98,7 @@
     (cl-ogr:ogr-register-all)
     (setf *initialized* t)))
 
-(defun set-geo-transform (hdriver array)
-  "GDALSetGeoTransform copies the coefficients, so we need not allocate anything."
-  (sb-int::with-pinned-objects (array)
-    (gdalsetgeotransform hdriver (sb-int::vector-sap array))))
+
 
 ;; (defun create-ogr-layer (OGRDataSourceH name OGRSpatialReferenceH eType &optional (options (cffi:null-pointer)))
 ;;   (ogr-ds-create-layer OGRDataSourceH name OGRSpatialReferenceH etype options))
@@ -128,20 +125,34 @@
 
 (declaim (type (simple-array double-float (1)) *xa* *ya* *za*))
 
-
-(declaim (inline transform-point-unthreadsafe))
 (defun transform-point-unthreadsafe (coordinate-transformation x y)
   "This is a faster version of transform-point*, but not thread safe"
   (declare (optimize (speed 3)))
+ 
   (setf (aref *xa* 0) x)
   (setf (aref *ya* 0) y)
   (sb-int::with-pinned-objects (*xa* *ya* *za*)
     (octt-transform-array coordinate-transformation
-			  1
-			  (sb-kernel::vector-sap *xa*)
-			  (sb-kernel::vector-sap *ya*)
-			  (sb-kernel::vector-sap *za*))
+                          1
+                          (sb-kernel::vector-sap *xa*)
+                          (sb-kernel::vector-sap *ya*)
+                          (sb-kernel::vector-sap *za*))
     (cons (aref *xa* 0) (aref *ya* 0))))
+
+;; No need to pin these objects then... they are immobile
+;; (sb-alien:define-alien-variable *xa* (array double-float 1))
+;; (sb-alien:define-alien-variable *ya* (array double-float 1))
+;; (sb-alien:define-alien-variable *za* (array double-float 1))
+;; (defun transform-point-unthreadsafe (coordinate-transformation x y)
+;;   "This is a faster version of transform-point*, but not thread safe"
+;;   (declare (optimize (speed 3))
+;;            (type double-float x y)
+;;            (inline octt-transform-array))
+;;   (setf (sb-alien:deref *xa* 0) x)
+;;   (setf (sb-alien:deref *ya* 0) y)
+;;   (octt-transform-array coordinate-transformation
+;;                         1 *xa* *ya* *za*)
+;;   (cons (sb-alien:deref *xa* 0) (sb-alien:deref *ya* 0)))
 
 (defun transform-point* (coordinate-transformation x y &optional (z 0d0 z-p))
   (let ((xa (make-array 1 :element-type 'double-float :initial-element x))
@@ -202,8 +213,6 @@ Example:
   (hSpatialRef :pointer)		; OGRSpatialReferenceH
   (eType cl-ogr::ogr-wkb-geometry-type)				; OGR-wkb-Geometry-Type ;; typo here
   (papszOptions (:pointer :string)))
-
-(cffi:defcfun ("CPLGetLastErrorMsg" cpl-get-last-error-msg) :string)
 
 ;; (defun test-ogr (fname)
 ;;   (maybe-initialize-gdal-ogr)

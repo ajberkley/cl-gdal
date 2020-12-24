@@ -161,6 +161,10 @@
 
 ;; --------------------------------------------------------
 
+(cffi:defcfun ("CPLGetLastErrorMsg" cpl-get-last-error-msg) :string)
+
+;; --------------------------------------------------------
+
 (cffi:defcfun ("GDALAllRegister" gdal-all-register) :void
   "Register all known configured GDAL drivers.
 
@@ -188,3 +192,4 @@
 (export 'gdal-all-register)
 
 ;; EOF
+

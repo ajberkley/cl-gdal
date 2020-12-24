@@ -11,6 +11,8 @@
 (defpackage :cl-gdal
   (:nicknames :gdal)
   (:use :cl)
-  (:export #:gdal-all-register))
+  (:export #:gdal-all-register
+           #:geotransform-type
+           #:with-gdal-file))
 
 ;; EOF
