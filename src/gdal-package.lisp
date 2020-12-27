@@ -13,6 +13,9 @@
   (:use :cl)
   (:export #:gdal-all-register
            #:geotransform-type
-           #:with-gdal-file))
+           #:with-gdal-file
+           #:set-geo-transform
+           #:get-geo-transform
+           #:+out-of-source-range+))
 
 ;; EOF

@@ -9,7 +9,8 @@
     :serial t
     :components
   ((:file "src/geo-transform")
-   (:file "cl-gdal-local"))
+   (:file "cl-gdal-local")
+   (:file "cached-transforms"))
     :depends-on (:cl-gdal
                  :cl-ogr
                  :alexandria

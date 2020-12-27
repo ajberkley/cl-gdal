@@ -5,10 +5,12 @@
 (defparameter *initialized* nil)
 
 (defmacro with-gdal-file ((filevar filename &optional (access (or :ga_readonly :ga_update))) &body body)
-  "Bind filevar to the result of gdal-open on filename.  Close on unwind / end of block."
+  "Bind filevar to the result of gdal-open on filename.  Close on unwind / end of block.  Use of
+   the returned gdal-dataset-h must be done single threaded."
   `(let (,filevar)
      (unwind-protect
 	  (progn
+            (maybe-initialize-gdal-ogr)
             (sb-int:with-float-traps-masked (:invalid) ;; needed for some files!
               (setf ,filevar (gdal-open ,filename ,access)))
 	    (assert (not (cffi::null-pointer-p ,filevar)) nil "Failed to open file")
@@ -125,6 +127,7 @@
 
 (declaim (type (simple-array double-float (1)) *xa* *ya* *za*))
 
+(declaim (inline transform-point-unthreadsafe))
 (defun transform-point-unthreadsafe (coordinate-transformation x y)
   "This is a faster version of transform-point*, but not thread safe"
   (declare (optimize (speed 3)))
@@ -138,6 +141,21 @@
                           (sb-kernel::vector-sap *ya*)
                           (sb-kernel::vector-sap *za*))
     (cons (aref *xa* 0) (aref *ya* 0))))
+
+(declaim (inline transform-point-unthreadsafe*))
+(defun transform-point-unthreadsafe* (coordinate-transformation x y)
+  "This is a faster version of transform-point*, but not thread safe"
+  (declare (optimize (speed 3)))
+ 
+  (setf (aref *xa* 0) x)
+  (setf (aref *ya* 0) y)
+  (sb-int::with-pinned-objects (*xa* *ya* *za*)
+    (octt-transform-array coordinate-transformation
+                          1
+                          (sb-kernel::vector-sap *xa*)
+                          (sb-kernel::vector-sap *ya*)
+                          (sb-kernel::vector-sap *za*))
+    (values (aref *xa* 0) (aref *ya* 0))))
 
 ;; No need to pin these objects then... they are immobile
 ;; (sb-alien:define-alien-variable *xa* (array double-float 1))
@@ -153,6 +171,18 @@
 ;;   (octt-transform-array coordinate-transformation
 ;;                         1 *xa* *ya* *za*)
 ;;   (cons (sb-alien:deref *xa* 0) (sb-alien:deref *ya* 0)))
+
+(declaim (inline transform-point-array))
+(defun transform-point-array (coordinate-transformation x y &optional (z (make-array (length x) :element-type 'double-float)))
+  (declare (type (simple-array double-float (*)) x y z))
+  (sb-int::with-pinned-objects (x y z)
+    (octt-transform-array coordinate-transformation
+                          (length x)
+                          (sb-kernel::vector-sap x)
+                          (sb-kernel::vector-sap y)
+                          (sb-kernel::vector-sap z)))
+  (values x y)) ;; do we need the zs?
+
 
 (defun transform-point* (coordinate-transformation x y &optional (z 0d0 z-p))
   (let ((xa (make-array 1 :element-type 'double-float :initial-element x))
