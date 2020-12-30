@@ -172,8 +172,8 @@
 ;;                         1 *xa* *ya* *za*)
 ;;   (cons (sb-alien:deref *xa* 0) (sb-alien:deref *ya* 0)))
 
-(declaim (inline transform-point-array))
-(defun transform-point-array (coordinate-transformation x y &optional (z (make-array (length x) :element-type 'double-float)))
+(declaim (inline transform-point-array!))
+(defun transform-point-array! (coordinate-transformation x y &optional (z (make-array (length x) :element-type 'double-float)))
   (declare (type (simple-array double-float (*)) x y z))
   (sb-int::with-pinned-objects (x y z)
     (octt-transform-array coordinate-transformation
@@ -182,6 +182,13 @@
                           (sb-kernel::vector-sap y)
                           (sb-kernel::vector-sap z)))
   (values x y)) ;; do we need the zs?
+
+(declaim (inline transform-point-array))
+(defun transform-point-array (coordinate-transformation x y &optional (z (make-array (length x) :element-type 'double-float)))
+  (declare (type (simple-array double-float (*)) x y z))
+  (let ((x (alexandria:copy-sequence '(simple-array double-float (*)) x))
+        (y (alexandria:copy-sequence '(simple-array double-float (*)) y)))
+    (transform-point-array! coordinate-transformation x y z)))
 
 
 (defun transform-point* (coordinate-transformation x y &optional (z 0d0 z-p))

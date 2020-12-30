@@ -16,6 +16,7 @@
                  :alexandria
                  :iterate
                  :cffi
-		 :trivial-garbage))
+		 :trivial-garbage
+                 :mmap-shared-cache))
 
 ;; EOF
