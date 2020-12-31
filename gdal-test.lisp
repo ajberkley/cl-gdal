@@ -238,8 +238,8 @@
 
 
 
-(defconstant +dst-no-data-single+ 99999f0)
-(defconstant +dst-no-data-double+ 99999d0)
+(defconstant +dst-no-data-single+ 9999f0)
+(defconstant +dst-no-data-double+ 9999d0)
 
 (defun warp-to-google-map-tif (filename-unwarped filename-warped)
   ;; Data is stored at doubles, so I should be able to recognize this
@@ -327,7 +327,7 @@
        (declare (inline ,draw-func))
        ,@body)))
 
-(deftype image-size () '(integer 0 10000000000))
+(deftype image-size () '(integer 0 100000000))
 
 (defun chunk-image (image chunk-iterator &optional (filename-generator (lambda (lat-lon-info)
 									 (format nil "test-stuff-~A.png" lat-lon-info))))
@@ -520,6 +520,10 @@
 (defun get-nearest-neighbors (ul-lon ul-lat lr-lon lr-lat x-size y-size input-x-size input-y-size source-spatial-reference source-geo-transform)
   (memoize (generate-nearest-neighbors ul-lon ul-lat lr-lon lr-lat x-size y-size input-x-size input-y-size source-spatial-reference source-geo-transform)))
 
+(defvar *output-xsize* (if (string= *model* "hrdps") 3348 500))
+(defvar *output-ysize* (if (string= *model* "hrdps") 2162 500))
+
+
 (defun draw-magnitude-nn (file color-scale output-directory filename &optional (scale #'identity))
   (declare (optimize (debug 3);; (speed 3) (safety 0)
                      ))
@@ -528,12 +532,12 @@
     (declare (type function scale))
     (cl-gdal::with-gdal-file (handle file)
       (let* ((data (cl-gdal::gdal-read-all-data (cl-gdal::gdal-get-raster-band handle 1)))
-             (x-size 3348);;3348);; input data is 2576 ;; dlon is 0.02 degrees which is 1.4 km at the south of Canada and 2.2 km at the equator
-             (y-size 2162);; 2162);; input data is 1456 ;; dlat is 0.03 degrees, which is 3.3 km km at the northern most part of Canada, and 2.2 km at the south of Canada.
+             (x-size *output-xsize*);;3348);; input data is 2576 ;; dlon is 0.02 degrees which is 1.4 km at the south of Canada and 2.2 km at the equator
+             (y-size *output-ysize*);; 2162);; input data is 1456 ;; dlat is 0.03 degrees, which is 3.3 km km at the northern most part of Canada, and 2.2 km at the south of Canada.
              (ulx (float *ulx* 0d0))
              (uly (float *uly* 0d0))
              (dlon (float (abs (/ (- *lrx* ulx) x-size)) 0d0))
-             (dlat (float (abs (/ (- *lry* uly) x-size)) 0d0))
+             (dlat (float (abs (/ (- *lry* uly) y-size)) 0d0))
              (data-ysize (car (array-dimensions data)))
              (data-xsize (cadr (array-dimensions data)))
              (source-spatial-reference (cl-gdal::gdalGetProjectionRef handle))
@@ -601,28 +605,29 @@
                                (cl-gd:draw-line mean-x-target mean-y-target (round (+ mean-x-target (* 0.5 width-target (cos angle)))) (round (+ mean-y-target (* 0.5 height-target (sin angle)))))))))))))
               (cl-gd:write-image-to-file "/tmp/new-annotated.png" :compression-level 6 :if-exists :supersede))
 
-            (format t "Chunking image~%")
-            (let ((tile-iterator (tile-iterator))) ;; gives me lat lon bounds
-              (declare (type function tile-iterator))
-              (assert (typep image 'png::rgb-alpha-image))
-              (time (chunk-image* ;; 1 second
-                     image
-                     (lambda () (let ((tile (funcall tile-iterator)))
-                                  (declare (type list tile))
-                                  (format t "Chunking tile ~A~%" tile)
-                                  (values (tile-bounds-to-pixel-bounds
-                                           tile
-                                           (lambda (lon lat)
-                                             (declare (type fixnum lon lat))
-                                             (let ((lon (coerce lon 'double-float))
-                                                   (lat (coerce lat 'double-float)))
-                                               (declare (type double-float lon lat))
-                                               (list (round (the (double-float -1d9 1d9) (/ (- lon ulx) dlon))) (round (the (double-float -1d9 1d9) (/ (- uly lat) dlat)))))))
-                                          tile)))
-            ;;          (lambda (lat-lon-info)
-            ;;            (format nil "~A/~A-~A" output-directory (let ((d (directory-from-tile-info lat-lon-info)))
-            ;;                                                      (subseq d 0 (1- (length d)))) filename)))))
-                     )))))))
+            ;; (format t "Chunking image~%")
+            ;; (let ((tile-iterator (tile-iterator))) ;; gives me lat lon bounds
+            ;;   (declare (type function tile-iterator))
+            ;;   (assert (typep image 'png::rgb-alpha-image))
+            ;;   (time (chunk-image* ;; 1 second
+            ;;          image
+            ;;          (lambda () (let ((tile (funcall tile-iterator)))
+            ;;                       (declare (type list tile))
+            ;;                       (format t "Chunking tile ~A~%" tile)
+            ;;                       (values (tile-bounds-to-pixel-bounds
+            ;;                                tile
+            ;;                                (lambda (lon lat)
+            ;;                                  (declare (type fixnum lon lat))
+            ;;                                  (let ((lon (coerce lon 'double-float))
+            ;;                                        (lat (coerce lat 'double-float)))
+            ;;                                    (declare (type double-float lon lat))
+            ;;                                    (list (round (the (double-float -1d9 1d9) (/ (- lon ulx) dlon))) (round (the (double-float -1d9 1d9) (/ (- uly lat) dlat)))))))
+            ;;                               tile)))
+            ;; ;;          (lambda (lat-lon-info)
+            ;; ;;            (format nil "~A/~A-~A" output-directory (let ((d (directory-from-tile-info lat-lon-info)))
+            ;; ;;                                                      (subseq d 0 (1- (length d)))) filename)))))
+            ;;          )))
+            ))))
     t))
 
 ;; OK, so that seems to work and when implemented may shave up to 10
@@ -728,6 +733,160 @@
 
 (defun prepare-files-for-draw-winds (ufile vfile)
   (combine-winds-warp-and-return-new-files ufile vfile))
+
+(defun draw-winds-nn (ufile vfile output-directory filename vector-output-filename &key (color-scale *wind-color-scale*))
+  (declare (optimize (speed 3)))
+  (cl-gdal::maybe-initialize-gdal-ogr)
+  (let (uband vband source-spatial-reference source-geo-transform
+              (data-ysize 0)
+              (data-xsize 0) 
+              (x-size *output-xsize*)
+              (y-size *output-ysize*))
+    (declare (type image-size data-xsize data-ysize x-size y-size))
+    (cl-gdal::with-gdal-file (uhandle ufile)
+      (cl-gdal::with-gdal-file (vhandle vfile)
+        (setf uband (cl-gdal::gdal-read-all-data (cl-gdal::gdal-get-raster-band uhandle 1))) ;; u is an eastward wind
+        (setf vband (cl-gdal::gdal-read-all-data (cl-gdal::gdal-get-raster-band vhandle 1))) ;; v is a northward wind
+        (setf data-ysize (car (array-dimensions uband)))
+        (setf data-xsize (cadr (array-dimensions uband)))
+        (setf source-spatial-reference (cl-gdal::gdalGetProjectionRef uhandle))
+        (setf source-geo-transform (get-geo-transform uhandle)))
+    (let* ((ulx (float *ulx* 0d0))
+           (uly (float *uly* 0d0))
+           (good-data-points 0)
+           (dlon (float (abs (/ (- *lrx* ulx) x-size)) 0d0))
+           (dlat (float (abs (/ (- *lry* uly) y-size)) 0d0)))
+      (declare (type (simple-array double-float (* *)) uband vband)
+               (type fixnum good-data-points))
+      (cached-transforms:with-cached-transform (xpixelref ypixelref anglepixelref ulx uly dlon dlat x-size y-size data-xsize data-ysize source-spatial-reference source-geo-transform)
+        (labels ((calculate-magnitude (u v) ;; data is in m/s
+                   (declare (type double-float u v)
+                            (inline sb-kernel::float-nan-p))
+                   (if (or (sb-kernel::float-nan-p u) (= u +dst-no-data-double+))
+                       +dst-no-data-single+
+                       (* 3.6f0 (coerce (sqrt (+ (* u u) (* v v))) 'single-float))))
+                 (calculate-angle (u v rotation)
+                   (let ((angle (+ rotation (- (float (atan v u) 0f0))))) ;; negative because y goes down the image
+                     (declare (type single-float angle))
+                     (when (> angle pi) (decf angle (float (* 2 pi) 0f0))) ;; mod one period only (rotation is < 2 pi)
+                     (when (< angle (- pi)) (incf angle (float (* 2 pi) 0f0)))
+                     (1+ (the (signed-byte 32) (round (the (float -300.0 300.0) (+ (* pi 37f0) (* angle 37f0))))))))) ;; -pi to pi, (* 2 pi 37f0)
+	(with-drawable-image (draw image y-size x-size)
+          (with-drawable-image (draw-vector image-vector y-size x-size :channels 1 :bits 8)
+            (loop for x of-type image-size below x-size do
+              (loop for y of-type image-size below y-size do
+                (let* ((idx (+ (* x-size y) x))
+                       (source-y (ypixelref idx))
+                       (source-x (xpixelref idx)))
+                  (declare (type fixnum idx))
+                  ;;(format t "At output ~A,~A maps to input ~A,~A~%" x y source-x source-y)
+                  (unless (or (= source-y +out-of-source-range+) (= source-x +out-of-source-range+))
+                    (let* ((rotation (anglepixelref idx))
+                           (u (aref uband source-y source-x))
+                           (v (aref vband source-y source-x))
+                           (d (calculate-magnitude u v)))
+                      (when (not (= d +dst-no-data-single+))
+                        (incf good-data-points)
+                        (let ((color (lookup-in-color-scale d color-scale)))
+                          (declare (type (simple-array (unsigned-byte 8) (3)) color))
+                          (destructuring-vector-bind (red green blue)
+                              color
+                            (draw y x red green blue)))
+                        (draw-vector y x (calculate-angle u v rotation))))))))
+          (format t "Out of ~A total data points, ~A had data~%" (* x-size y-size) good-data-points)
+          (png::encode-file image "/tmp/new-wind.png")
+          (png::encode-file image-vector "/tmp/new-wind-vector.png")))))))))
+
+
+        
+        ;;        (clip-tile-to-bounds (x0 y0 x1 y1) ;; this isn't right, this will result in the corners of the image being wrong!
+        ;;          (list (max (min x0 x1) 0)
+        ;;                (max (min y0 y1) 0)
+        ;;                (min (max x0 x1) (1- x-size))
+        ;;                (min (max y0 y1) (1- y-size)))))
+	;; (declare (type (simple-array double-float (* *)) uband vband))
+        
+	;; ;;(format t "~Ax~A~%" x-size y-size)
+	;; (let ((tile-iterator (tile-iterator)))
+	;;   (declare (type function tile-iterator))
+	;;   (loop for tile  = (funcall tile-iterator)
+        ;;         while tile
+        ;;         do
+        ;;            (destructuring-bind (x-pixel-min y-pixel-max x-pixel-max y-pixel-min)
+        ;;                (apply #'clip-tile-to-bounds (tile-bounds-to-pixel-bounds tile lon-lat-to-pixel-transformer))
+        ;;              (declare (type fixnum x-pixel-max y-pixel-min x-pixel-min y-pixel-max))
+        ;;              (format t "~A: ~A->~A, ~A->~A~%" tile x-pixel-min x-pixel-max y-pixel-min y-pixel-max)
+        ;;              (let ((new-y-size (the image-size (- y-pixel-max y-pixel-min)))
+        ;;                    (new-x-size (the image-size (- x-pixel-max x-pixel-min))))
+        ;;                (declare (type image-size new-x-size new-y-size x-pixel-min x-pixel-max y-pixel-min y-pixel-max))
+        ;;                (with-drawable-image (draw image new-y-size new-x-size)
+        ;;                  (with-drawable-image (draw-vector image-vector new-y-size new-x-size :channels 1 :bits 8)
+        ;;                    ;;(format t "New image: ~Ax~A~%" new-x-size new-y-size)
+        ;;                    (loop for y fixnum from y-pixel-min below y-pixel-max
+        ;;                          for y-real fixnum from 0
+        ;;                          do
+        ;;                             (loop for x fixnum from x-pixel-min below x-pixel-max
+        ;;                                   for x-real fixnum from 0
+        ;;                                   do
+        ;;                                      (let* ((u (aref uband y x))
+        ;;                                             (v (aref vband y x))
+        ;;                                             (mag (calculate-magnitude u v)))
+        ;;                                        (declare (type double-float u v))
+        ;;                                        (when (not (= mag +dst-no-data-single+))
+        ;;                                          (destructuring-vector-bind (red green blue)
+        ;;                                              (lookup-in-color-scale mag color-scale)
+        ;;                                            (draw y-real x-real red green blue)
+        ;;                                            (let ((angle (- (float (atan v u) 0f0)))) ;; negative because y goes down the image
+        ;;                                              ;; (when (= x-real 0)
+        ;;                                              ;;   (format t "angle is ~A -> ~A~%" angle (round (+ 3145 (* angle 1000f0))))
+        ;;                                              ;;   (sleep 0.1))
+        ;;                                              (draw-vector y-real x-real (1+ (round (+ (* pi 37f0) (* angle 37f0))))))))))) ;; -pi to pi, (* 2 pi 37f0)
+        ;;                    (png::encode-file image (format nil "~A/~A/~A" output-directory (directory-from-tile-info tile) filename))
+        ;;                    (png::encode-file image-vector (format nil "~A/~A/~A" output-directory (directory-from-tile-info tile) vector-output-filename))))))))
+        ;; (rm-file ufile)
+        ;; (rm-file vfile)))))
+
+(defun draw-winds-old-full-image (ufile-input vfile-input output-directory filename vector-output-filename &key (color-scale *wind-color-scale*))
+  (declare (optimize (speed 3)))
+  (cl-gdal::maybe-initialize-gdal-ogr)
+  (destructuring-bind (ufile vfile)
+      (prepare-files-for-draw-winds ufile-input vfile-input)
+    (let (uband vband (y-size 0) (x-size 0) (good-data 0))
+      (declare (type image-size x-size y-size) (type fixnum good-data))
+      (cl-gdal::with-gdal-file (uhandle ufile)
+	(cl-gdal::with-gdal-file (vhandle vfile)
+	  (setf uband (cl-gdal::gdal-read-all-data (cl-gdal::gdal-get-raster-band uhandle 1))) ;; u is an eastward wind
+	  (setf vband (cl-gdal::gdal-read-all-data (cl-gdal::gdal-get-raster-band vhandle 1))) ;; v is a northward wind
+	  (setf y-size (car (array-dimensions uband)))
+	  (setf x-size (cadr (array-dimensions uband)))))
+      (labels ((calculate-magnitude (u v) ;; data is in m/s
+                 (* 3.6f0 (coerce (sqrt (+ (* u u) (* v v))) 'single-float))))
+	(declare (type (simple-array double-float (* *)) uband vband))
+        (with-drawable-image (draw image y-size x-size)
+          (with-drawable-image (draw-vector image-vector y-size x-size :channels 1 :bits 8)
+          (loop
+            for x below x-size
+            do
+               (loop
+                 for y below y-size
+                 do
+                    (let ((u (aref uband y x))
+                          (v (aref vband y x)))
+                      (declare (inline sb-ext:float-nan-p))
+                      (unless (or (float-nan-p u) (float-nan-p v) (= u +dst-no-data-double+) (= v +dst-no-data-double+))
+                        (incf good-data)
+                        (destructuring-vector-bind (red green blue)
+                            (lookup-in-color-scale (calculate-magnitude u v) color-scale)
+                          (draw y x red green blue))
+                        (let ((angle (- (float (atan v u) 0f0)))) ;; negative because y goes down the image
+                          ;; (when (= x-real 0)
+                          ;;   (format t "angle is ~A -> ~A~%" angle (round (+ 3145 (* angle 1000f0))))
+                          ;;   (sleep 0.1))
+                          (draw-vector y x (1+ (round (+ (* pi 37f0) (* angle 37f0)))))))))) ;; -pi to pi, (* 2 pi 37f0)))))
+            (format t "Out of ~A points, ~A good data point~%" (* x-size y-size) good-data)
+            (png:encode-file image "/tmp/original-wind.png")
+            (png:encode-file image-vector "/tmp/original-wind-vector.png")))))))
+                            
 
 (defun draw-winds** (ufile-input vfile-input output-directory filename vector-output-filename &key (color-scale *wind-color-scale*))
   (declare (optimize (speed 3)))
