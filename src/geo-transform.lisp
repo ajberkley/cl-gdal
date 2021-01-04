@@ -86,57 +86,6 @@
 
 (deftype pixelidx () 'fixnum)
 
-(defun generate-lon-lat-to-pixel-transform-opt (gdal-dataset-h)
-  (declare (optimize (speed 3)))
-  "Returns (lambda (lon lat) -> pixelx, pixely)
-
-   Remember pixel 0 0 is the upper left of the image... so the bottom
-   right of a 100x100 pixel image is actually at pixel 100x100 (the
-   bottom right of the last pixel at (99,99))."
-  (let* ((x-size (gdal-get-raster-band-x-size (gdal-get-raster-band gdal-dataset-h 1)))
-	 (y-size (gdal-get-raster-band-y-size (gdal-get-raster-band gdal-dataset-h 1)))
-	 (my-projection (osr-new-spatial-reference (gdalGetProjectionRef gdal-dataset-h)))
-	 (google-projection (osr-new-spatial-reference +google-map-wkt+))
-	 (itransform (make-coordinate-transformation google-projection my-projection))
-	 (ftransform (make-coordinate-transformation my-projection google-projection))
-	 (source-geo-transform (get-geo-transform gdal-dataset-h))
-	 (ulx (aref source-geo-transform 0))
-	 (lry (+ (aref source-geo-transform 3) (* x-size (aref source-geo-transform 4)) (* y-size (aref source-geo-transform 5))))
-	 (lrx (+ (aref source-geo-transform 0) (* x-size (aref source-geo-transform 1)) (* y-size (aref source-geo-transform 2))))
-	 (uly (aref source-geo-transform 3)))
-    (declare (type fixnum x-size y-size)
-	     (type double-float ulx lry lrx uly)
-	     (type geotransform source-geo-transform))
-    (labels (;; (from-source-pixel-to-source-geo-ref (pixelx pixely)
-             ;;   (declare (type pixelidx pixelx pixely))
-	     ;;   (list (+ (aref source-geo-transform 3) (* pixelx (aref source-geo-transform 4)) (* pixely (aref source-geo-transform 5)))
-	     ;;         (+ (aref source-geo-transform 0) (* pixelx (aref source-geo-transform 1)) (* pixely (aref source-geo-transform 2)))))
-	     (from-source-geo-ref-to-source-pixel (x y)
-               (declare (type double-float x y))
-	       (let ((xpixel (* x-size (/ (- x ulx) (- lrx ulx)))) ;; can precompute lrx - ulx lry - uly
-		     (ypixel (* y-size (/ (- y uly) (- lry uly)))))
-                 (declare (type (double-float -1d16 1d16) xpixel ypixel))
-		 (values (round xpixel) (round ypixel))))
-	     ;; (from-source-geo-ref-to-lon-lat (georefx georefy)
-	     ;;   (transform-point* ftransform georefy georefx))
-	     ;; (from-source-pixel-to-lon-lat (pixelx pixely)
-	     ;;   (apply #'from-source-geo-ref-to-lon-lat (from-source-pixel-to-source-geo-ref pixelx pixely)))
-	     (from-google-geo-ref-to-source-geo-ref (a b)
-               (declare (type double-float a b))
-	       (apply #'from-source-geo-ref-to-source-pixel
-		(multiple-value-list (transform-point-unthreadsafe* itransform a b)))))
-      (destructuring-bind (ullon ullat)
-          (transform-point* ftransform ulx uly)
-        (destructuring-bind (lrlon lrlat)
-            (transform-point* ftransform lrx lry)
-          (format t "Corner Coordinates of source file:~%")
-          (format t "Upper Left (~,4f, ~,4f) (LON ~,6f, LAT ~,6f) ~%" ulx uly ullon ullat)
-          (format t "Lower Right (~,4f, ~,4f) (LON ~,6f, LAT ~,6f)~%" lrx lry lrlon lrlat)
-          (format t "Upper Left is ~A~%" (from-source-geo-ref-to-source-pixel ulx uly))
-          (format t "Lower Right is ~A~%" (from-source-geo-ref-to-source-pixel lrx lry))))
-      (values #'from-google-geo-ref-to-source-geo-ref ;; #'from-source-pixel-to-lon-lat
-              ))))
-
 (defun generate-lon-lat-to-pixel-transform (gdal-dataset-h)
   ;;(declare (optimize (speed 3)))
   "Returns (lambda (lon lat) -> pixelx, pixely)
@@ -164,15 +113,21 @@
 		     (+ (aref source-geo-transform 0) (* pixelx (aref source-geo-transform 1)) (* pixely (aref source-geo-transform 2)))))
 	     (from-source-geo-ref-to-source-pixel (ref)
 	       (let ((xpixel (* x-size (/ (- (the double-float (car ref)) ulx) (- lrx ulx))))
-		     (ypixel (* y-size (/ (- (the double-float (cdr ref)) uly) (- lry uly)))))
-		 (list (round xpixel) (round ypixel))))
+		     (ypixel (* y-size (/ (- (the double-float (cadr ref)) uly) (- lry uly)))))
+		 (list xpixel ypixel)))
 	     (from-source-geo-ref-to-lon-lat (georefx georefy)
 	       (transform-point* ftransform georefy georefx))
 	     (from-source-pixel-to-lon-lat (pixelx pixely)
 	       (apply #'from-source-geo-ref-to-lon-lat (from-source-pixel-to-source-geo-ref pixelx pixely)))
 	     (from-google-geo-ref-to-source-geo-ref (a b)
-	       (from-source-geo-ref-to-source-pixel
-		(transform-point-unthreadsafe itransform (coerce a 'double-float) (coerce b 'double-float)))))
+               (destructuring-bind (xpixel-unshifted ypixel-unshifted)
+                   (from-source-geo-ref-to-source-pixel
+                    (transform-point* itransform (coerce a 'double-float) (coerce b 'double-float)))
+                 (destructuring-bind (xpixel-shifted ypixel-shifted)
+                   (from-source-geo-ref-to-source-pixel
+                    (transform-point* itransform (+ (coerce a 'double-float) 0.1d0) (coerce b 'double-float)))
+                   (values (round xpixel-unshifted) (round ypixel-shifted)
+                           (float (angle (- xpixel-shifted xpixel-unshifted) (- ypixel-shifted ypixel-unshifted) 0.1d0 0.0d0) 0f0))))))
       (destructuring-bind (ullon ullat)
           (transform-point* ftransform ulx uly)
         (destructuring-bind (lrlon lrlat)
@@ -180,8 +135,8 @@
           (format t "Corner Coordinates of source file:~%")
           (format t "Upper Left (~,4f, ~,4f) (LON ~,6f, LAT ~,6f) ~%" ulx uly ullon ullat)
           (format t "Lower Right (~,4f, ~,4f) (LON ~,6f, LAT ~,6f)~%" lrx lry lrlon lrlat)
-          (format t "Upper Left is ~A~%" (from-source-geo-ref-to-source-pixel (cons ulx uly)))
-          (format t "Lower Right is ~A~%" (from-source-geo-ref-to-source-pixel (cons lrx lry)))))
+          (format t "Upper Left is ~A~%" (from-source-geo-ref-to-source-pixel (list ulx uly)))
+          (format t "Lower Right is ~A~%" (from-source-geo-ref-to-source-pixel (list lrx lry)))))
       (values #'from-google-geo-ref-to-source-geo-ref #'from-source-pixel-to-lon-lat))))
 
 (defconstant +out-of-source-range+ (1- (ash 1 16)))
@@ -265,48 +220,105 @@
           (format t "Lower Right (~,4f, ~,4f) (LON ~,6f, LAT ~,6f)~%" lrx lry lrlon lrlat)
       #'from-google-geo-ref-to-source-geo-ref)))))
 
+;; (defun clip-geo-transform (gt ulpixelx ulpixely)
+;;   "From an extant raster band with geo-transform GT, return a new geo-transform which has as the upper left, upper right corner
+;;    the upper left of pixel (ULPIXELX, ULPIXELY)"
+;;   ;; GT(0) x-coordinate of the upper-left corner of the upper-left pixel.
+;;   ;; GT(1) w-e pixel resolution / pixel width.
+;;   ;; GT(2) row rotation (typically zero).
+;;   ;; GT(3) y-coordinate of the upper-left corner of the upper-left pixel.
+;;   ;; GT(4) column rotation (typically zero).
+;;   ;; GT(5) n-s pixel resolution / pixel height (negative value for a north-up image).
+;;   (declare (type (simple-array double-float (6)) gt))
+;;   (assert (and (zerop (aref gt 2)) (zerop (aref gt 4))))
+;;   ;; If you want to handle rotated grid, here are what the lower right geo coordinates are with a rotated grid... too lazy to think about this right now
+;;   ;; 	 (lry (+ (aref source-geo-transform 3) (* x-size-df (aref source-geo-transform 4)) (* y-size-df (aref source-geo-transform 5))))
+;;   ;;     (lrx (+ (aref source-geo-transform 0) (* x-size-df (aref source-geo-transform 1)) (* y-size-df (aref source-geo-transform 2))))
+;;   (let ((new-array (make-array 6 :element-type 'double-float :initial-contents gt)))
+;;     (setf (aref new-array 0) (* (- ulpixelx 0.5) (aref new-array 1))) ;; we want the upper left of the requested pixel
+;;     (setf (aref new-array 3) (* (- ulpixely 0.5) (aref new-array 2)))
+;;     new-array))
 
+;; (defun rough-clip-gdal-raster (raster lon-lat-to-pixel-transform geo-transform ul-lon ul-lat lr-lon lr-lat)
+;;   "This does not change the projection, but chooses instead the best sub-set of the square that includes the target ul-lon ul-lat lr-long lr-lat values.
+;;    Hard coded to double floats right now..."
+;;   (declare (type function lon-lat-to-pixel-transform)
+;;            (type geotransform geo-transform))
+;;   (destructuring-bind (ul-x ul-y)
+;;         (funcall lon-lat-to-pixel-transform ul-lon ul-lat)
+;;       (destructuring-bind (lr-x lr-y)
+;;           (funcall lon-lat-to-pixel-transform lr-lon lr-lat)
+;;         (let ((real-ul-x (min ul-x lr-x))
+;;               (real-lr-x (max ul-x lr-x))
+;;               (real-ul-y (min ul-y lr-y))
+;;               (real-lr-y (max ul-y lr-y)))
+;;           (let* ((new-geo-transform (clip-geo-transform geo-transform real-ul-x real-ul-y))
+;;                  (new-width (1+ (- real-lr-x real-ul-x))) ;; we want to include the pixels requested
+;;                  (new-height (1+ (- real-lr-y real-ul-y)))
+;;                  (new-raster (cffi:foreign-alloc :double :count (* new-height new-width))))
+;;             (format t "New-raster is ~A~%" new-raster)
+;;             (loop
+;;               for y-target of-type fixnum from 0 below new-height
+;;               for y-source of-type fixnum from real-ul-y
+;;               do
+;;                  (loop
+;;                    for x-target of-type fixnum from 0 below new-width
+;;                    for x-source of-type fixnum from real-ul-x
+;;                    do
+;;                       (setf (cffi:mem-aref new-raster :double (+ (* y-target new-width) x-target)) (aref raster y-source x-source))))
+;;             (values new-raster new-geo-transform new-width new-height))))))
 
-;;The original one
-(defun generate-lat-lon-to-pixel-transform (handle)
-  (declare (optimize (speed 3)))
-  "Remember pixel 0 0 is the upper left of the image... so the bottom right of a 100x100 pixel image
-   is actually at pixel 100x100 (the bottom right of the last pixel at (99,99))"
-  (let* ((x-size (gdal-get-raster-band-x-size (gdal-get-raster-band handle 1)))
-	 (y-size (gdal-get-raster-band-y-size (gdal-get-raster-band handle 1)))
-	 (my-projection (osr-new-spatial-reference (gdalGetProjectionRef handle)))
-	 (google-projection (osr-new-spatial-reference +google-map-wkt+))
-	 (itransform (make-coordinate-transformation google-projection my-projection))
-	 (ftransform (make-coordinate-transformation my-projection google-projection))
-	 (source-geo-transform (get-geo-transform handle))
-	 (ulx (aref source-geo-transform 0))
-	 (lry (+ (aref source-geo-transform 3) (* x-size (aref source-geo-transform 4)) (* y-size (aref source-geo-transform 5))))
-	 (lrx (+ (aref source-geo-transform 0) (* x-size (aref source-geo-transform 1)) (* y-size (aref source-geo-transform 2))))
-	 (uly (aref source-geo-transform 3)))
-    (declare (type fixnum x-size y-size)
-	     (type double-float ulx lry lrx uly)
-	     (type (simple-array double-float (6)) source-geo-transform))
-    (labels ((from-source-pixel-to-source-geo-ref (pixelx pixely)
-	       (list (+ (aref source-geo-transform 3) (* pixelx (aref source-geo-transform 4)) (* pixely (aref source-geo-transform 5)))
-		     (+ (aref source-geo-transform 0) (* pixelx (aref source-geo-transform 1)) (* pixely (aref source-geo-transform 2)))))
-	     (from-source-geo-ref-to-source-pixel (ref)
-	       (let ((xpixel (* x-size (/ (- (the double-float (car ref)) ulx) (- lrx ulx))))
-		     (ypixel (* y-size (/ (- (the double-float (cdr ref)) uly) (- lry uly)))))
-		 (list (round xpixel) (round ypixel))))
-	     (from-source-geo-ref-to-lon-lat (georefx georefy)
-	       (transform-point* ftransform georefy georefx))
-	     (from-source-pixel-to-lon-lat (pixelx pixely)
-	       (apply #'from-source-geo-ref-to-lon-lat (from-source-pixel-to-source-geo-ref pixelx pixely)))
-	     (from-google-geo-ref-to-source-geo-ref (a b)
-	       (from-source-geo-ref-to-source-pixel
-		(transform-point-unthreadsafe itransform (coerce a 'double-float) (coerce b 'double-float)))))
-      (destructuring-bind (ullon ullat)
-	  (transform-point* ftransform ulx uly)
-	(destructuring-bind (lrlon lrlat)
-	    (transform-point* ftransform lrx lry)
-	  (format t "Corner Coordinates of source file:~%")
-	  (format t "Upper Left (~,4f, ~,4f) (LON ~,6f, LAT ~,6f) ~%" ulx uly ullon ullat)
-	  (format t "Lower Right (~,4f, ~,4f) (LON ~,6f, LAT ~,6f)~%" lrx lry lrlon lrlat)
-	  (format t "Upper Left is ~A~%" (from-source-geo-ref-to-source-pixel (cons ulx uly)))
-	  (format t "Lower Right is ~A~%" (from-source-geo-ref-to-source-pixel (cons lrx lry)))
-      (values #'from-google-geo-ref-to-source-geo-ref #'from-source-pixel-to-lon-lat))))))
+;; Since we can only CreateCopy not Create with grib2, we want to generate a template file for the outputs.  Maybe if we use all zeros we can
+;; generate some very minimal set over the tiles with the right size band, and then just write in the new band?  For now, though, the input-file
+;; will be the large file.
+
+;; (defun make-cpl-string-list (key-value-alist)
+;;   "key-value-pairs is an alist of key value string pairs"
+;;   (let ((string-array (cffi:foreign-alloc :pointer :count (1+ (length key-value-alist)))))
+;;     (loop
+;;       for alist-entry in key-value-alist
+;;       for index fixnum from 0
+;;       do
+;;       (let ((string (format nil "~A=~A" (car alist-entry) (cdr alist-entry))))
+;;         (setf (cffi:mem-aref string-array :pointer index)
+;;               (cffi:foreign-string-alloc string :null-terminated-p t)))
+;;       finally
+;;            (setf (cffi:mem-aref string-array :pointer index) (cffi:null-pointer))
+;;            (return string-array))))
+
+;; (defun free-cpl-string-list (cpl-string-list)
+;;   (loop
+;;     for index fixnum from 0
+;;     for ptr = (cffi:mem-aref cpl-string-list :pointer index)
+;;     until (cffi:null-pointer-p ptr)
+;;     do
+;;        (cffi:foreign-free ptr))
+;;   (cffi:foreign-free cpl-string-list))
+       
+
+;; (defun test-rough-clip-gdal-raster (input-file tile output-file)
+;;   (cl-gdal::maybe-initialize-gdal-ogr)
+;;   (cl-gdal::with-gdal-file (handle input-file)
+;;     (let* ((driver (cl-gdal::gdal-get-driver-by-name "GRIB"))
+;;            (data (cl-gdal::gdal-read-all-data (cl-gdal::gdal-get-raster-band handle 1)))
+;;            (geo-transform (get-geo-transform handle)))
+;;       (multiple-value-bind (lon-lat-to-pixel-transform pixel-to-lon-lat-transform)
+;;           (generate-lon-lat-to-pixel-transform handle)
+;;         (declare (ignorable pixel-to-lon-lat-transform))
+;;         (format t "Source image is ~A by ~A pixels~%" (cadr (array-dimensions data)) (car (array-dimensions data)))
+;;         (multiple-value-bind (new-raster new-geo-transform x-size y-size)
+;;             (apply #'rough-clip-gdal-raster data lon-lat-to-pixel-transform geo-transform tile)
+;;           ;; UGH, GRIB2 does not support create.  But can use gdal_translate call????
+;;           (let* ((papszoptions (make-cpl-string-list '(("DATA_ENCODING" . "IEEE_FLOATING_POINT") ("NBITS" . "64"))))
+;;                  (new-dataset (cl-gdal::gdal-create-copy driver output-file handle 0 papszoptions (cffi::null-pointer) (cffi::null-pointer))))
+;;             (when (cffi:null-pointer-p new-dataset)
+;;               (format t "Error: ~A~%" (cl-gdal::cpl-get-last-error-msg)))
+;;             (free-cpl-string-list papszoptions)
+;;             (print new-dataset)
+;;             (print (set-geo-transform new-dataset new-geo-transform))
+;;             (print (cl-gdal::GDALSetProjection new-dataset (cl-gdal::GDALGetProjectionRef handle)))
+;;             (format t "new-raster is ~A and is ~A x ~A~%" new-raster x-size y-size)
+;;             (print (cl-gdal::gdal-raster-io new-dataset :GF_Write 0 0 x-size y-size new-raster x-size y-size :GDT_Float64 0 0))
+;;             (print (cl-gdal::gdal-close new-dataset))
+;;             (cffi:foreign-free new-raster)))))))
+           

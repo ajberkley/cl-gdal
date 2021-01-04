@@ -3,8 +3,8 @@ This package provides minimal set of
 bindings to the [GDAL/OGR library](http://www.gdal.org/).
 
 This was forked from vityok/cl-gdal.  It's a snapshot of what I use
-for the canadarasp.com backend.  I added some more functionality and
-some wrappers for somewhat ease of use.
+for the canadarasp.com backend.  I added some more functionality around
+geo-transforms and some wrappers for somewhat ease of use.
 
 Install:
 

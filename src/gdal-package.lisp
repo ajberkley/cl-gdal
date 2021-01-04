@@ -16,6 +16,7 @@
            #:with-gdal-file
            #:set-geo-transform
            #:get-geo-transform
-           #:+out-of-source-range+))
+           #:+out-of-source-range+
+           #:rough-clip-gdal-raster))
 
 ;; EOF
