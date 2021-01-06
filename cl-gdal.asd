@@ -25,6 +25,7 @@ Master: http://www.gdal.org"
 	      :serial t
 	      :components ((:file "gdal-package")
 			   (:file "gdal-core")
+                           (:file "gdal-cpl")
 			   (:file "gdal-dataset")
 			   (:file "gdal-rasterband")
 			   (:file "gdal-common"))))

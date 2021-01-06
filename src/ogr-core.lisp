@@ -325,12 +325,6 @@ properly."
 
 ;; --------------------------------------------------------
 
-(cffi:defcfun ("CPLFree" cpl-free) :void
-  (ref :pointer))
-(export 'cpl-free)
-
-;; --------------------------------------------------------
-
 (cffi:defcfun ("OGRCleanupAll" ogr-cleanup-all) :void
   "Cleanup all OGR related resources.
 

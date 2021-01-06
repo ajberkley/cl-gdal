@@ -1,5 +1,7 @@
 (in-package :cl-gdal)
 
+;; Mapping from longitude / latitude to pixels in a geo referenced file and the inverse
+
 (cffi:define-foreign-type geotransform-type ()
   ()
   (:actual-type :pointer)
@@ -41,14 +43,6 @@
   (hDS gdal-dataset-h)
   (padfTransform geotransform))
 
-(define-condition gdal-error (simple-error) ())
-
-(defmacro handling-cpl-err (&body body)
-  (let ((cpl (gensym "CPLERR")))
-    `(let ((,cpl (progn ,@body)))
-       (unless (eql ,cpl :ce_none)
-         (error 'gdal-error :format-control "Error of type ~A: ~A" :format-arguments (list ,cpl (cpl-get-last-error-msg) ))))))
-
 (defun set-geo-transform (hdriver array)
   "GDALSetGeoTransform copies the coefficients."
   (declare (type geotransform array))
@@ -59,18 +53,45 @@
     (handling-cpl-err (gdalgetgeotransform dshandle a))
     a))
 
+(deftype pixelidx () 'fixnum)
+
 (defun make-geo-transformer (hband)
   "For a raster band HBAND, generate a function that converts from pixel indices
-   (where x,y = 0,0 in the upper left of the raster band), return a lambda which will return
-   the equivalent pixel location in source geo ref units (could be lat, lon, etc)."
+   (where xpixel,ypixel = 0,0 is the upper left pixel of the raster
+   band), to the center of the pixel in source geo reference units (typically
+   meters).  Returns (cons geo-x geo-y)."
   (let ((gt (get-geo-transform hband)))
     (declare (type geotransform gt))
-    (values 
-     (lambda (x-idx y-idx) ;; pixel indices, from 0
-       (let ((center-x (+ x-idx 0.5))
-	     (center-y (+ y-idx 0.5)))
-	 (list (+ (aref gt 0) (* (aref gt 1) center-x) (* (aref gt 2) center-y))
-	       (+ (aref gt 3) (* (aref gt 4) center-x) (* (aref gt 5) center-y))))))))
+    (lambda (x-idx y-idx) ;; pixel indices, from 0
+      (let ((center-x (+ x-idx 0.5))
+            (center-y (+ y-idx 0.5)))
+        (cons (+ (aref gt 0) (* (aref gt 1) center-x) (* (aref gt 2) center-y))
+              (+ (aref gt 3) (* (aref gt 4) center-x) (* (aref gt 5) center-y)))))))
+
+(defun make-inverse-geo-transformer (hband)
+  (let ((gt (get-geo-transform hband)))
+    (declare (type geotransform gt))
+    (lambda (geo-x geo-y) ;; meters typically
+      ;; do math
+      )))
+
+(defun transform-point* (coordinate-transformation x y &optional (z 0d0 z-p))
+  "coordinate-transformation should be from something like:
+           (let* ((source-spatial-reference (cl-gdal::osr-new-spatial-reference (cl-gdal::gdalgetprojectionref handle)))
+                  (google-spatial-reference (cl-gdal::osr-new-spatial-reference cl-gdal::+google-map-wkt+)))
+               (cl-gdal::make-coordinate-transformation google-spatial-reference source-spatial-reference))"
+  (cffi:with-foreign-object (data :double 3)
+    (setf (cffi:mem-aref data :double 0) x)
+    (setf (cffi:mem-aref data :double 1) y)
+    (setf (cffi:mem-aref data :double 2) z)
+    (octt-transform-array coordinate-transformation
+                          1
+                          (cffi:mem-aptr data :double 0)
+                          (cffi:mem-aptr data :double 1)
+                          (cffi:mem-aptr data :double 2))
+    (if z-p
+        (list (cffi:mem-aref data :double 0) (cffi:mem-aref data :double 1) (cffi:mem-aref data :double 2))
+        (list (cffi:mem-aref data :double 0) (cffi:mem-aref data :double 1)))))
 
 (alexandria:define-constant +google-map-wkt+
   "GEOGCS[\"WGS 84\",
@@ -84,7 +105,8 @@
         AUTHORITY[\"EPSG\",\"9122\"]],
     AUTHORITY[\"EPSG\",\"4326\"]]" :test #'string=)
 
-(deftype pixelidx () 'fixnum)
+(defun print-bounding-area (gdal-dataset-h)
+  )
 
 (defun generate-lon-lat-to-pixel-transform (gdal-dataset-h)
   ;;(declare (optimize (speed 3)))

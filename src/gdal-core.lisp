@@ -16,17 +16,6 @@
 
 ;; --------------------------------------------------------
 
-;; CPLErr
-(cffi:defcenum cpl-err
-    "More functions are defined in the cpl_error.h file."
-  (:CE_None 0)
-  (:CE_Debug 1)
-  (:CE_Warning 2)
-  (:CE_Failure 3)
-  (:CE_Fatal 4))
-
-;; --------------------------------------------------------
-
 (cffi:defcenum gdal-access
   "Flag indicating read/write, or read-only access to data."
   (:GA_ReadOnly 0)                      ; Read only (no update) access
@@ -158,10 +147,6 @@
   (dfGCPX :double)         ; X position of GCP in georeferenced space.
   (dfGCPY :double)         ; Y position of GCP in georeferenced space
   (dfGCPZ :double))        ; Elevation of GCP, or zero if not known.
-
-;; --------------------------------------------------------
-
-(cffi:defcfun ("CPLGetLastErrorMsg" cpl-get-last-error-msg) :string)
 
 ;; --------------------------------------------------------
 
